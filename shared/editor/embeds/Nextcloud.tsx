@@ -8,7 +8,7 @@ function Nextcloud(props: Props) {
   return <Frame {...props} src={source} title="Nextcloud" />;
 }
 
-Nextcloud.ENABLED = [new RegExp("^https://.*\.nextcloud\.com/?(.*)$")];
+Nextcloud.ENABLED = [new RegExp("^https://.*\\.nextcloud\\.com/?(.*)$")];
 Nextcloud.URL_PATH_REGEX = /(.+)/;
 
 export default Nextcloud;
