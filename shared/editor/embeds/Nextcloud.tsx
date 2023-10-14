@@ -9,7 +9,7 @@ function Nextcloud(props: Props) {
 }
 
 Nextcloud.ENABLED = [
-  new RegExp("^https://nextcloud.com/apps/calendar/embed/?(.*)$"),
+    new RegExp("^https://.*\.nextcloud\.com/?(.*)$"),
 ];
 Nextcloud.URL_PATH_REGEX = /(.+)/;
 
