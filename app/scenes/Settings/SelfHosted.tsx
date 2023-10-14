@@ -17,6 +17,7 @@ import SettingRow from "./components/SettingRow";
 type FormData = {
   drawIoUrl: string;
   gristUrl: string;
+  nextcloudUrl: string;
 };
 
 function SelfHosted() {
@@ -34,6 +35,11 @@ function SelfHosted() {
     service: IntegrationService.Grist,
   }) as Integration<IntegrationType.Embed> | undefined;
 
+  const integrationNextcloud = find(integrations.orderedData, {
+    type: IntegrationType.Embed,
+    service: IntegrationService.Nextcloud,
+  }) as Integration<IntegrationType.Embed> | undefined;
+
   const {
     register,
     reset,
@@ -44,6 +50,7 @@ function SelfHosted() {
     defaultValues: {
       drawIoUrl: integrationDiagrams?.settings.url,
       gristUrl: integrationGrist?.settings.url,
+      nextcloudUrl: integrationNextcloud?.settings.url,
     },
   });
 
@@ -57,8 +64,9 @@ function SelfHosted() {
     reset({
       drawIoUrl: integrationDiagrams?.settings.url,
       gristUrl: integrationGrist?.settings.url,
+      nextcloudUrl: integrationNextcloud?.settings.url,
     });
-  }, [integrationDiagrams, integrationGrist, reset]);
+  }, [integrationDiagrams, integrationGrist, integrationNextcloud, reset]);
 
   const handleSubmit = React.useCallback(
     async (data: FormData) => {
@@ -89,6 +97,19 @@ function SelfHosted() {
           await integrationGrist?.delete();
         }
 
+        if (data.nextcloudUrl) {
+          await integrations.save({
+            id: integrationNextcloud?.id,
+            type: IntegrationType.Embed,
+            service: IntegrationService.Nextcloud,
+            settings: {
+              url: data.nextcloudUrl,
+            },
+          });
+        } else {
+          await integrationNextcloud?.delete();
+        }
+
         showToast(t("Settings saved"), {
           type: "success",
         });
@@ -98,7 +119,14 @@ function SelfHosted() {
         });
       }
     },
-    [integrations, integrationDiagrams, integrationGrist, t, showToast]
+    [
+      integrations,
+      integrationDiagrams,
+      integrationGrist,
+      integrationNextcloud,
+      t,
+      showToast,
+    ]
   );
 
   return (
@@ -131,6 +159,21 @@ function SelfHosted() {
             placeholder="https://docs.getgrist.com/"
             pattern="https?://.*"
             {...register("gristUrl")}
+          />
+        </SettingRow>
+
+        <SettingRow
+          label={t("Nextcloud deployment")}
+          name="nextcloudUrl"
+          description={t(
+            "Add your self-hosted nextcloud installation URL here."
+          )}
+          border={false}
+        >
+          <Input
+            placeholder="https://nextcloud.com/"
+            pattern="https?://.*"
+            {...register("nextcloudUrl")}
           />
         </SettingRow>
 

@@ -84,6 +84,7 @@ export enum IntegrationService {
   Grist = "grist",
   Slack = "slack",
   GoogleAnalytics = "google-analytics",
+  Nextcloud = "nextcloud",
 }
 
 export enum CollectionPermission {
