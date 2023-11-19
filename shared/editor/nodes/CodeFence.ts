@@ -1,5 +1,6 @@
 import copy from "copy-to-clipboard";
 import Token from "markdown-it/lib/token";
+import { exitCode } from "prosemirror-commands";
 import { textblockTypeInputRule } from "prosemirror-inputrules";
 import {
   NodeSpec,
@@ -12,6 +13,7 @@ import { Decoration, DecorationSet } from "prosemirror-view";
 import refractor from "refractor/core";
 import bash from "refractor/lang/bash";
 import clike from "refractor/lang/clike";
+import cpp from "refractor/lang/cpp";
 import csharp from "refractor/lang/csharp";
 import css from "refractor/lang/css";
 import elixir from "refractor/lang/elixir";
@@ -54,6 +56,7 @@ import visualbasic from "refractor/lang/visual-basic";
 import yaml from "refractor/lang/yaml";
 import zig from "refractor/lang/zig";
 
+import { toast } from "sonner";
 import { Primitive } from "utility-types";
 import { Dictionary } from "~/hooks/useDictionary";
 import { UserPreferences } from "../../types";
@@ -67,7 +70,7 @@ import {
 } from "../commands/codeFence";
 import toggleBlockType from "../commands/toggleBlockType";
 import Mermaid from "../extensions/Mermaid";
-import Prism, { LANGUAGES } from "../extensions/Prism";
+import Prism from "../extensions/Prism";
 import { isCode } from "../lib/isCode";
 import { MarkdownSerializerState } from "../lib/markdown/serializer";
 import { findParentNode } from "../queries/findParentNode";
@@ -79,6 +82,7 @@ const DEFAULT_LANGUAGE = "javascript";
 
 [
   bash,
+  cpp,
   css,
   clike,
   csharp,
@@ -127,17 +131,12 @@ export default class CodeFence extends Node {
   constructor(options: {
     dictionary: Dictionary;
     userPreferences?: UserPreferences | null;
-    onShowToast: (message: string) => void;
   }) {
     super(options);
   }
 
   get showLineNumbers(): boolean {
     return this.options.userPreferences?.codeBlockLineNumbers ?? true;
-  }
-
-  get languageOptions() {
-    return Object.entries(LANGUAGES);
   }
 
   get name() {
@@ -152,7 +151,7 @@ export default class CodeFence extends Node {
         },
       },
       content: "text*",
-      marks: "",
+      marks: "comment",
       group: "block",
       code: true,
       defining: true,
@@ -185,11 +184,15 @@ export default class CodeFence extends Node {
 
   commands({ type, schema }: { type: NodeType; schema: Schema }) {
     return {
-      code_block: (attrs: Record<string, Primitive>) =>
-        toggleBlockType(type, schema.nodes.paragraph, {
+      code_block: (attrs: Record<string, Primitive>) => {
+        if (attrs?.language) {
+          Storage.set(PERSISTENCE_KEY, attrs.language);
+        }
+        return toggleBlockType(type, schema.nodes.paragraph, {
           language: Storage.get(PERSISTENCE_KEY, DEFAULT_LANGUAGE),
           ...attrs,
-        }),
+        });
+      },
       copyToClipboard: (): Command => (state) => {
         const codeBlock = findParentNode(isCode)(state.selection);
 
@@ -198,7 +201,7 @@ export default class CodeFence extends Node {
         }
 
         copy(codeBlock.node.textContent);
-        this.options.onShowToast(this.options.dictionary.codeCopied);
+        toast.message(this.options.dictionary.codeCopied);
         return true;
       },
     };
@@ -209,10 +212,26 @@ export default class CodeFence extends Node {
   }
 
   keys({ type, schema }: { type: NodeType; schema: Schema }) {
-    const output = {
+    const output: Record<string, Command> = {
       "Shift-Ctrl-\\": toggleBlockType(type, schema.nodes.paragraph),
       Tab: insertSpaceTab,
-      Enter: newlineInCode,
+      Enter: (state, dispatch) => {
+        if (!isInCode(state)) {
+          return false;
+        }
+        const { selection } = state;
+        const text = selection.$anchor.nodeBefore?.text;
+        const selectionAtEnd =
+          selection.$anchor.parentOffset ===
+          selection.$anchor.parent.nodeSize - 2;
+
+        if (selectionAtEnd && text?.endsWith("\n")) {
+          exitCode(state, dispatch);
+          return true;
+        }
+
+        return newlineInCode(state, dispatch);
+      },
       "Shift-Enter": newlineInCode,
     };
 

@@ -5,6 +5,7 @@ import { TeamIcon } from "outline-icons";
 import { useRef, useState } from "react";
 import * as React from "react";
 import { useTranslation, Trans } from "react-i18next";
+import { toast } from "sonner";
 import { ThemeProvider, useTheme } from "styled-components";
 import { buildDarkTheme, buildLightTheme } from "@shared/styles/theme";
 import { CustomTheme, TeamPreference } from "@shared/types";
@@ -18,20 +19,21 @@ import InputColor from "~/components/InputColor";
 import Scene from "~/components/Scene";
 import Switch from "~/components/Switch";
 import Text from "~/components/Text";
-import env from "~/env";
 import useCurrentTeam from "~/hooks/useCurrentTeam";
+import usePolicy from "~/hooks/usePolicy";
 import useStores from "~/hooks/useStores";
-import useToasts from "~/hooks/useToasts";
 import isCloudHosted from "~/utils/isCloudHosted";
+import TeamDelete from "../TeamDelete";
 import ImageInput from "./components/ImageInput";
 import SettingRow from "./components/SettingRow";
 
 function Details() {
-  const { auth, ui } = useStores();
-  const { showToast } = useToasts();
+  const { dialogs, ui } = useStores();
   const { t } = useTranslation();
   const team = useCurrentTeam();
   const theme = useTheme();
+  const can = usePolicy(team);
+
   const form = useRef<HTMLFormElement>(null);
   const [accent, setAccent] = useState<null | undefined | string>(
     team.preferences?.customTheme?.accent
@@ -63,7 +65,7 @@ function Details() {
       }
 
       try {
-        await auth.updateTeam({
+        await team.save({
           name,
           subdomain,
           defaultCollectionId,
@@ -73,26 +75,12 @@ function Details() {
             customTheme,
           },
         });
-        showToast(t("Settings saved"), {
-          type: "success",
-        });
+        toast.success(t("Settings saved"));
       } catch (err) {
-        showToast(err.message, {
-          type: "error",
-        });
+        toast.error(err.message);
       }
     },
-    [
-      auth,
-      name,
-      subdomain,
-      defaultCollectionId,
-      team.preferences,
-      publicBranding,
-      customTheme,
-      showToast,
-      t,
-    ]
+    [team, name, subdomain, defaultCollectionId, publicBranding, customTheme, t]
   );
 
   const handleNameChange = React.useCallback(
@@ -110,20 +98,24 @@ function Details() {
   );
 
   const handleAvatarUpload = async (avatarUrl: string) => {
-    await auth.updateTeam({
-      avatarUrl,
-    });
-    showToast(t("Logo updated"), {
-      type: "success",
-    });
+    await team.save({ avatarUrl });
+    toast.success(t("Logo updated"));
   };
 
   const handleAvatarError = React.useCallback(
     (error: string | null | undefined) => {
-      showToast(error || t("Unable to upload new logo"));
+      toast.error(error || t("Unable to upload new logo"));
     },
-    [showToast, t]
+    [t]
   );
+
+  const showDeleteWorkspace = () => {
+    dialogs.openModal({
+      title: t("Delete workspace"),
+      content: <TeamDelete onSubmit={dialogs.closeAllModals} />,
+      isCentered: true,
+    });
+  };
 
   const onSelectCollection = React.useCallback(async (value: string) => {
     const defaultCollectionId = value === "home" ? null : value;
@@ -146,7 +138,7 @@ function Details() {
         <Heading>{t("Details")}</Heading>
         <Text type="secondary">
           <Trans>
-            These settings affect the way that your knowledge base appears to
+            These settings affect the way that your workspace appears to
             everyone on the team.
           </Trans>
         </Text>
@@ -222,6 +214,7 @@ function Details() {
           </SettingRow>
           {team.avatarUrl && (
             <SettingRow
+              border={false}
               name={TeamPreference.PublicBranding}
               label={t("Public branding")}
               description={t(
@@ -242,13 +235,13 @@ function Details() {
           <Heading as="h2">{t("Behavior")}</Heading>
 
           <SettingRow
-            visible={env.SUBDOMAINS_ENABLED && isCloudHosted}
+            visible={isCloudHosted}
             label={t("Subdomain")}
             name="subdomain"
             description={
               subdomain ? (
                 <>
-                  <Trans>Your knowledge base will be accessible at</Trans>{" "}
+                  <Trans>Your workspace will be accessible at</Trans>{" "}
                   <strong>
                     {subdomain}.{getBaseDomain()}
                   </strong>
@@ -284,9 +277,31 @@ function Details() {
             />
           </SettingRow>
 
-          <Button type="submit" disabled={auth.isSaving || !isValid}>
-            {auth.isSaving ? `${t("Saving")}…` : t("Save")}
+          <Button type="submit" disabled={team.isSaving || !isValid}>
+            {team.isSaving ? `${t("Saving")}…` : t("Save")}
           </Button>
+
+          {can.delete && (
+            <>
+              <p>&nbsp;</p>
+
+              <Heading as="h2">{t("Danger")}</Heading>
+              <SettingRow
+                name="delete"
+                border={false}
+                label={t("Delete workspace")}
+                description={t(
+                  "You can delete this entire workspace including collections, documents, and users."
+                )}
+              >
+                <span>
+                  <Button onClick={showDeleteWorkspace} neutral>
+                    {t("Delete workspace")}…
+                  </Button>
+                </span>
+              </SettingRow>
+            </>
+          )}
         </form>
       </Scene>
     </ThemeProvider>

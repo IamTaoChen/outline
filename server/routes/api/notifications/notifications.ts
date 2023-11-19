@@ -33,11 +33,8 @@ const handleUnsubscribe = async (
   const userId = (ctx.input.body.userId ?? ctx.input.query.userId) as string;
   const token = (ctx.input.body.token ?? ctx.input.query.token) as string;
 
-  const user = await User.scope("withTeam").findByPk(userId, {
-    rejectOnEmpty: true,
-  });
   const unsubscribeToken = NotificationSettingsHelper.unsubscribeToken(
-    user,
+    userId,
     eventType
   );
 
@@ -45,6 +42,10 @@ const handleUnsubscribe = async (
     ctx.redirect(`${env.URL}?notice=invalid-auth`);
     return;
   }
+
+  const user = await User.scope("withTeam").findByPk(userId, {
+    rejectOnEmpty: true,
+  });
 
   user.setNotificationEventType(eventType, false);
   await user.save();
@@ -111,7 +112,9 @@ router.post(
       pagination: { ...ctx.state.pagination, total },
       data: {
         notifications: await Promise.all(
-          notifications.map(presentNotification)
+          notifications.map((notification) =>
+            presentNotification(ctx, notification)
+          )
         ),
         unseen,
       },
@@ -166,7 +169,7 @@ router.post(
     });
 
     ctx.body = {
-      data: await presentNotification(notification),
+      data: await presentNotification(ctx, notification),
       policies: presentPolicies(user, [notification]),
     };
   }

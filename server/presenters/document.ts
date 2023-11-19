@@ -1,6 +1,7 @@
 import { traceFunction } from "@server/logging/tracing";
 import { Document } from "@server/models";
 import DocumentHelper from "@server/models/helpers/DocumentHelper";
+import { APIContext } from "@server/types";
 import presentUser from "./user";
 
 type Options = {
@@ -8,6 +9,7 @@ type Options = {
 };
 
 async function presentDocument(
+  ctx: APIContext | undefined,
   document: Document,
   options: Options | null | undefined = {}
 ) {
@@ -16,20 +18,22 @@ async function presentDocument(
     ...options,
   };
 
-  // TODO
-  // const text = options.isPublic
-  //   ? await DocumentHelper.attachmentsToSignedUrls(
-  //       document.text,
-  //       document.teamId
-  //     )
-  //   : document.text;
-
+  const asJSON = !ctx || Number(ctx?.headers["x-api-version"] ?? 0) >= 3;
   const data: Record<string, any> = {
     id: document.id,
     url: document.url,
     urlId: document.urlId,
     title: document.title,
-    data: DocumentHelper.toJSON(document),
+    data: asJSON
+      ? await DocumentHelper.toJSON(
+          document,
+          options.isPublic
+            ? { signedUrls: 60, teamId: document.teamId }
+            : undefined
+        )
+      : undefined,
+    text: asJSON ? undefined : document.text,
+    emoji: document.emoji,
     tasks: document.tasks,
     createdAt: document.createdAt,
     createdBy: undefined,
@@ -39,11 +43,8 @@ async function presentDocument(
     archivedAt: document.archivedAt,
     deletedAt: document.deletedAt,
     teamId: document.teamId,
-    template: document.template,
-    templateId: document.templateId,
     collaboratorIds: [],
     revision: document.revisionCount,
-    insightsEnabled: document.insightsEnabled,
     fullWidth: document.fullWidth,
     collectionId: undefined,
     parentDocumentId: undefined,
@@ -60,6 +61,9 @@ async function presentDocument(
     data.createdBy = presentUser(document.createdBy);
     data.updatedBy = presentUser(document.updatedBy);
     data.collaboratorIds = document.collaboratorIds;
+    data.templateId = document.templateId;
+    data.template = document.template;
+    data.insightsEnabled = document.insightsEnabled;
   }
 
   return data;

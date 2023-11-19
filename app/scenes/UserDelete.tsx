@@ -2,13 +2,13 @@ import { observer } from "mobx-react";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { useTranslation, Trans } from "react-i18next";
+import { toast } from "sonner";
 import Button from "~/components/Button";
 import Flex from "~/components/Flex";
 import Input from "~/components/Input";
 import Text from "~/components/Text";
 import env from "~/env";
 import useStores from "~/hooks/useStores";
-import useToasts from "~/hooks/useToasts";
 
 type FormData = {
   code: string;
@@ -17,7 +17,6 @@ type FormData = {
 function UserDelete() {
   const [isWaitingCode, setWaitingCode] = React.useState(false);
   const { auth } = useStores();
-  const { showToast } = useToasts();
   const { t } = useTranslation();
   const {
     register,
@@ -30,15 +29,13 @@ function UserDelete() {
       ev.preventDefault();
 
       try {
-        await auth.requestDelete();
+        await auth.requestDeleteUser();
         setWaitingCode(true);
-      } catch (error) {
-        showToast(error.message, {
-          type: "error",
-        });
+      } catch (err) {
+        toast.error(err.message);
       }
     },
-    [auth, showToast]
+    [auth]
   );
 
   const handleSubmit = React.useCallback(
@@ -46,13 +43,11 @@ function UserDelete() {
       try {
         await auth.deleteUser(data);
         await auth.logout();
-      } catch (error) {
-        showToast(error.message, {
-          type: "error",
-        });
+      } catch (err) {
+        toast.error(err.message);
       }
     },
-    [auth, showToast]
+    [auth]
   );
 
   const inputProps = register("code", {
@@ -68,19 +63,11 @@ function UserDelete() {
             <Text type="secondary">
               <Trans>
                 A confirmation code has been sent to your email address, please
-                enter the code below to permanantly destroy your account.
+                enter the code below to permanently destroy your account.
               </Trans>
             </Text>
-            <Text type="secondary">
-              <Trans
-                defaults="<em>Note:</em> Signing back in will cause a new account to be automatically reprovisioned."
-                components={{
-                  em: <strong />,
-                }}
-              />
-            </Text>
             <Input
-              placeholder="CODE"
+              placeholder={t("Confirmation code")}
               autoComplete="off"
               autoFocus
               maxLength={8}
@@ -105,10 +92,14 @@ function UserDelete() {
             {t("Continue")}…
           </Button>
         ) : (
-          <Button type="submit" disabled={formState.isSubmitting} danger>
+          <Button
+            type="submit"
+            disabled={formState.isSubmitting || !formState.isValid}
+            danger
+          >
             {formState.isSubmitting
               ? `${t("Deleting")}…`
-              : t("Delete My Account")}
+              : t("Delete my account")}
           </Button>
         )}
       </form>

@@ -1,7 +1,9 @@
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { URL } from "url";
 import util from "util";
+import { type SaveOptions } from "sequelize";
 import { Op } from "sequelize";
 import {
   Column,
@@ -16,9 +18,9 @@ import {
   Is,
   DataType,
   IsUUID,
-  IsUrl,
   AllowNull,
   AfterUpdate,
+  BeforeUpdate,
 } from "sequelize-typescript";
 import { TeamPreferenceDefaults } from "@shared/constants";
 import {
@@ -28,17 +30,20 @@ import {
 } from "@shared/types";
 import { getBaseDomain, RESERVED_SUBDOMAINS } from "@shared/utils/domains";
 import env from "@server/env";
+import { ValidationError } from "@server/errors";
 import DeleteAttachmentTask from "@server/queues/tasks/DeleteAttachmentTask";
 import parseAttachmentIds from "@server/utils/parseAttachmentIds";
 import Attachment from "./Attachment";
 import AuthenticationProvider from "./AuthenticationProvider";
 import Collection from "./Collection";
 import Document from "./Document";
+import Share from "./Share";
 import TeamDomain from "./TeamDomain";
 import User from "./User";
 import ParanoidModel from "./base/ParanoidModel";
 import Fix from "./decorators/Fix";
 import IsFQDN from "./validators/IsFQDN";
+import IsUrlOrRelativePath from "./validators/IsUrlOrRelativePath";
 import Length from "./validators/Length";
 import NotContainsUrl from "./validators/NotContainsUrl";
 
@@ -69,9 +74,9 @@ class Team extends ParanoidModel {
   @Unique
   @Length({
     min: 2,
-    max: env.isCloudHosted() ? 32 : 255,
+    max: env.isCloudHosted ? 32 : 255,
     msg: `subdomain must be between 2 and ${
-      env.isCloudHosted() ? 32 : 255
+      env.isCloudHosted ? 32 : 255
     } characters`,
   })
   @Is({
@@ -96,7 +101,7 @@ class Team extends ParanoidModel {
   defaultCollectionId: string | null;
 
   @AllowNull
-  @IsUrl
+  @IsUrlOrRelativePath
   @Length({ max: 4096, msg: "avatarUrl must be 4096 characters or less" })
   @Column(DataType.STRING)
   get avatarUrl() {
@@ -155,9 +160,7 @@ class Team extends ParanoidModel {
    * @return {boolean} Whether to show email login options
    */
   get emailSigninEnabled(): boolean {
-    return (
-      this.guestSignin && (!!env.SMTP_HOST || env.ENVIRONMENT === "development")
-    );
+    return this.guestSignin && (!!env.SMTP_HOST || env.isDevelopment);
   }
 
   get url() {
@@ -168,12 +171,28 @@ class Team extends ParanoidModel {
       return `${url.protocol}//${this.domain}${url.port ? `:${url.port}` : ""}`;
     }
 
-    if (!this.subdomain || !env.SUBDOMAINS_ENABLED) {
+    if (!this.subdomain || !env.isCloudHosted) {
       return env.URL;
     }
 
     url.host = `${this.subdomain}.${getBaseDomain()}`;
     return url.href.replace(/\/$/, "");
+  }
+
+  /**
+   * Returns a code that can be used to delete the user's team. The code will
+   * be rotated when the user signs out.
+   *
+   * @returns The deletion code.
+   */
+  public getDeleteConfirmationCode(user: User) {
+    return crypto
+      .createHash("md5")
+      .update(`${this.id}${user.jwtSecret}`)
+      .digest("hex")
+      .replace(/[l1IoO0]/gi, "")
+      .slice(0, 8)
+      .toUpperCase();
   }
 
   /**
@@ -310,6 +329,28 @@ class Team extends ParanoidModel {
   allowedDomains: TeamDomain[];
 
   // hooks
+
+  @BeforeUpdate
+  static async checkDomain(model: Team, options: SaveOptions) {
+    if (!model.domain) {
+      return model;
+    }
+
+    model.domain = model.domain.toLowerCase();
+
+    const count = await Share.count({
+      ...options,
+      where: {
+        domain: model.domain,
+      },
+    });
+
+    if (count > 0) {
+      throw ValidationError("Domain is already in use");
+    }
+
+    return model;
+  }
 
   @AfterUpdate
   static deletePreviousAvatar = async (model: Team) => {

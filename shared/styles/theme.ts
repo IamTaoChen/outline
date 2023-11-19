@@ -59,10 +59,12 @@ const buildBaseTheme = (input: Partial<Colors>) => {
 
   return {
     fontFamily:
-      "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen, Ubuntu,Cantarell,'Open Sans','Helvetica Neue',sans-serif",
+      "-apple-system, BlinkMacSystemFont, Inter, 'Segoe UI', Roboto, Oxygen, sans-serif",
     fontFamilyMono:
-      "'SFMono-Regular',Consolas,'Liberation Mono', Menlo, Courier,monospace",
-    fontWeight: 400,
+      "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace",
+    fontWeightRegular: 400,
+    fontWeightMedium: 500,
+    fontWeightBold: 600,
     backgroundTransition: "background 100ms ease-in-out",
     accentText: colors.white,
     selected: colors.accent,
@@ -150,8 +152,8 @@ export const buildLightTheme = (input: Partial<Colors>): DefaultTheme => {
     buttonNeutralBorder: darken(0.15, colors.white),
     tooltipBackground: colors.almostBlack,
     tooltipText: colors.white,
-    toastBackground: colors.almostBlack,
-    toastText: colors.white,
+    toastBackground: colors.white,
+    toastText: colors.almostBlack,
     quote: colors.slateLight,
     codeBackground: colors.smoke,
     codeBorder: colors.smokeDark,
@@ -213,8 +215,8 @@ export const buildDarkTheme = (input: Partial<Colors>): DefaultTheme => {
     buttonNeutralBorder: colors.slateDark,
     tooltipBackground: colors.white,
     tooltipText: colors.lightBlack,
-    toastBackground: colors.white,
-    toastText: colors.lightBlack,
+    toastBackground: colors.veryDarkBlue,
+    toastText: colors.almostWhite,
     quote: colors.almostWhite,
     code: colors.almostWhite,
     codeBackground: colors.black75,

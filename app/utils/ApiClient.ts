@@ -12,6 +12,7 @@ import {
   NetworkError,
   NotFoundError,
   OfflineError,
+  PaymentRequiredError,
   RateLimitExceededError,
   RequestError,
   ServiceUnavailableError,
@@ -81,6 +82,7 @@ class ApiClient {
       Accept: "application/json",
       "cache-control": "no-cache",
       "x-editor-version": EDITOR_VERSION,
+      "x-api-version": "3",
       pragma: "no-cache",
       ...options?.headers,
     };
@@ -131,7 +133,7 @@ class ApiClient {
 
     // Handle 401, log out user
     if (response.status === 401) {
-      await stores.auth.logout(false, false);
+      await stores.auth.logout(true, false);
       return;
     }
 
@@ -158,6 +160,10 @@ class ApiClient {
 
     if (response.status === 400) {
       throw new BadRequestError(error.message);
+    }
+
+    if (response.status === 402) {
+      throw new PaymentRequiredError(error.message);
     }
 
     if (response.status === 403) {
