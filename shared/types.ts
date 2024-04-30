@@ -81,6 +81,7 @@ export enum IntegrationService {
   Diagrams = "diagrams",
   Grist = "grist",
   Slack = "slack",
+  GitLabSnippet = "gitlabsnippet",
   GoogleAnalytics = "google-analytics",
   GitHub = "github",
 }
@@ -90,12 +91,14 @@ export type UserCreatableIntegrationService = Extract<
   | IntegrationService.Diagrams
   | IntegrationService.Grist
   | IntegrationService.GoogleAnalytics
+  | IntegrationService.GitLabSnippet
 >;
 
 export const UserCreatableIntegrationService = {
   Diagrams: IntegrationService.Diagrams,
   Grist: IntegrationService.Grist,
   GoogleAnalytics: IntegrationService.GoogleAnalytics,
+  GitLabSnippet: IntegrationService.GitLabSnippet,
 } as const;
 
 export enum CollectionPermission {

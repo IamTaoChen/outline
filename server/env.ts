@@ -575,6 +575,13 @@ export class Environment {
     this.toOptionalNumber(environment.MAXIMUM_EXPORT_SIZE) ?? os.totalmem();
 
   /**
+   * CSP
+   */
+  @IsOptional()
+  @CannotUseWithout("CSP_ALLOW_SITE")
+  public CSP_ALLOW_SITE = this.toOptionalString(process.env.CSP_ALLOW_SITE);
+
+  /**
    * Enable unsafe-inline in script-src CSP directive
    */
   @IsBoolean()
