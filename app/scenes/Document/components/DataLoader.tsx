@@ -122,7 +122,7 @@ function DataLoader({ match, children }: Props) {
 
   React.useEffect(() => {
     async function fetchSubscription() {
-      if (document?.id && !revisionId) {
+      if (document?.id && !document?.isDeleted && !revisionId) {
         try {
           await subscriptions.fetchPage({
             documentId: document.id,
@@ -134,7 +134,7 @@ function DataLoader({ match, children }: Props) {
       }
     }
     void fetchSubscription();
-  }, [document?.id, subscriptions, revisionId]);
+  }, [document?.id, document?.isDeleted, subscriptions, revisionId]);
 
   React.useEffect(() => {
     async function fetchViews() {
@@ -183,7 +183,7 @@ function DataLoader({ match, children }: Props) {
 
       // Prevents unauthorized request to load share information for the document
       // when viewing a public share link
-      if (can.read) {
+      if (can.read && !document.isDeleted) {
         if (team.getPreference(TeamPreference.Commenting)) {
           void comments.fetchPage({
             documentId: document.id,

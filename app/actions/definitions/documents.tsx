@@ -26,6 +26,7 @@ import {
   CommentIcon,
   GlobeIcon,
   CopyIcon,
+  EyeIcon,
 } from "outline-icons";
 import * as React from "react";
 import { toast } from "sonner";
@@ -36,12 +37,15 @@ import DocumentDelete from "~/scenes/DocumentDelete";
 import DocumentMove from "~/scenes/DocumentMove";
 import DocumentPermanentDelete from "~/scenes/DocumentPermanentDelete";
 import DocumentPublish from "~/scenes/DocumentPublish";
+import DeleteDocumentsInTrash from "~/scenes/Trash/components/DeleteDocumentsInTrash";
 import DocumentTemplatizeDialog from "~/components/DocumentTemplatizeDialog";
 import DuplicateDialog from "~/components/DuplicateDialog";
 import SharePopover from "~/components/Sharing";
+import { getHeaderExpandedKey } from "~/components/Sidebar/components/Header";
 import { createAction } from "~/actions";
-import { DocumentSection } from "~/actions/sections";
+import { DocumentSection, TrashSection } from "~/actions/sections";
 import env from "~/env";
+import { setPersistedState } from "~/hooks/usePersistedState";
 import history from "~/utils/history";
 import {
   documentInsightsPath,
@@ -51,6 +55,7 @@ import {
   searchPath,
   documentPath,
   urlify,
+  trashPath,
 } from "~/utils/routeHelpers";
 
 export const openDocument = createAction({
@@ -87,8 +92,18 @@ export const createDocument = createAction({
   section: DocumentSection,
   icon: <NewDocumentIcon />,
   keywords: "create",
-  visible: ({ currentTeamId, stores }) =>
-    !!currentTeamId && stores.policies.abilities(currentTeamId).createDocument,
+  visible: ({ currentTeamId, activeCollectionId, stores }) => {
+    if (
+      activeCollectionId &&
+      !stores.policies.abilities(activeCollectionId).createDocument
+    ) {
+      return false;
+    }
+
+    return (
+      !!currentTeamId && stores.policies.abilities(currentTeamId).createDocument
+    );
+  },
   perform: ({ activeCollectionId, inStarredSection }) =>
     history.push(newDocumentPath(activeCollectionId), {
       starred: inStarredSection,
@@ -159,6 +174,7 @@ export const starDocument = createAction({
 
     const document = stores.documents.get(activeDocumentId);
     await document?.star();
+    setPersistedState(getHeaderExpandedKey("starred"), true);
   },
 });
 
@@ -431,7 +447,8 @@ export const copyDocumentAsMarkdown = createAction({
   name: ({ t }) => t("Copy as Markdown"),
   section: DocumentSection,
   keywords: "clipboard",
-  visible: ({ activeDocumentId }) => !!activeDocumentId,
+  visible: ({ activeDocumentId, stores }) =>
+    !!activeDocumentId && stores.policies.abilities(activeDocumentId).download,
   perform: ({ stores, activeDocumentId, t }) => {
     const document = activeDocumentId
       ? stores.documents.get(activeDocumentId)
@@ -589,6 +606,23 @@ export const pinDocument = createAction({
   children: [pinDocumentToCollection, pinDocumentToHome],
 });
 
+export const searchInDocument = createAction({
+  name: ({ t }) => t("Search in document"),
+  analyticsName: "Search document",
+  section: DocumentSection,
+  icon: <SearchIcon />,
+  visible: ({ stores, activeDocumentId }) => {
+    if (!activeDocumentId) {
+      return false;
+    }
+    const document = stores.documents.get(activeDocumentId);
+    return !document?.isDeleted;
+  },
+  perform: ({ activeDocumentId }) => {
+    history.push(searchPath(undefined, { documentId: activeDocumentId }));
+  },
+});
+
 export const printDocument = createAction({
   name: ({ t, isContextMenu }) =>
     isContextMenu ? t("Print") : t("Print document"),
@@ -596,7 +630,7 @@ export const printDocument = createAction({
   section: DocumentSection,
   icon: <PrintIcon />,
   visible: ({ activeDocumentId }) => !!(activeDocumentId && window.print),
-  perform: async () => {
+  perform: () => {
     queueMicrotask(window.print);
   },
 });
@@ -826,6 +860,27 @@ export const permanentlyDeleteDocument = createAction({
   },
 });
 
+export const permanentlyDeleteDocumentsInTrash = createAction({
+  name: ({ t }) => t("Empty trash"),
+  analyticsName: "Empty trash",
+  section: TrashSection,
+  icon: <TrashIcon />,
+  dangerous: true,
+  visible: ({ stores }) =>
+    stores.documents.deleted.length > 0 && !!stores.auth.user?.isAdmin,
+  perform: ({ stores, t, location }) => {
+    stores.dialogs.openModal({
+      title: t("Permanently delete documents in trash"),
+      content: (
+        <DeleteDocumentsInTrash
+          onSubmit={stores.dialogs.closeAllModals}
+          shouldRedirect={location.pathname === trashPath()}
+        />
+      ),
+    });
+  },
+});
+
 export const openDocumentComments = createAction({
   name: ({ t }) => t("Comments"),
   analyticsName: "Open comments",
@@ -855,7 +910,7 @@ export const openDocumentHistory = createAction({
   icon: <HistoryIcon />,
   visible: ({ activeDocumentId, stores }) => {
     const can = stores.policies.abilities(activeDocumentId ?? "");
-    return !!activeDocumentId && can.read && !can.restore;
+    return !!activeDocumentId && can.listRevisions;
   },
   perform: ({ activeDocumentId, stores }) => {
     if (!activeDocumentId) {
@@ -882,7 +937,7 @@ export const openDocumentInsights = createAction({
 
     return (
       !!activeDocumentId &&
-      can.read &&
+      can.listViews &&
       !document?.isTemplate &&
       !document?.isDeleted
     );
@@ -896,6 +951,37 @@ export const openDocumentInsights = createAction({
       return;
     }
     history.push(documentInsightsPath(document));
+  },
+});
+
+export const toggleViewerInsights = createAction({
+  name: ({ t, stores, activeDocumentId }) => {
+    const document = activeDocumentId
+      ? stores.documents.get(activeDocumentId)
+      : undefined;
+    return document?.insightsEnabled
+      ? t("Disable viewer insights")
+      : t("Enable viewer insights");
+  },
+  analyticsName: "Toggle viewer insights",
+  section: DocumentSection,
+  icon: <EyeIcon />,
+  visible: ({ activeDocumentId, stores }) => {
+    const can = stores.policies.abilities(activeDocumentId ?? "");
+    return can.updateInsights;
+  },
+  perform: async ({ activeDocumentId, stores }) => {
+    if (!activeDocumentId) {
+      return;
+    }
+    const document = stores.documents.get(activeDocumentId);
+    if (!document) {
+      return;
+    }
+
+    await document.save({
+      insightsEnabled: !document.insightsEnabled,
+    });
   },
 });
 
@@ -919,6 +1005,7 @@ export const rootDocumentActions = [
   moveDocument,
   openRandomDocument,
   permanentlyDeleteDocument,
+  permanentlyDeleteDocumentsInTrash,
   printDocument,
   pinDocumentToCollection,
   pinDocumentToHome,
