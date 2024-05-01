@@ -17,6 +17,7 @@ import SettingRow from "./components/SettingRow";
 type FormData = {
   drawIoUrl: string;
   gristUrl: string;
+  gitlabUrl: string;
 };
 
 function SelfHosted() {
@@ -33,6 +34,11 @@ function SelfHosted() {
     service: IntegrationService.Grist,
   }) as Integration<IntegrationType.Embed> | undefined;
 
+  const integrationGitLabSnippet = find(integrations.orderedData, {
+    type: IntegrationType.Embed,
+    service: IntegrationService.GitLabSnippet,
+  }) as Integration<IntegrationType.Embed> | undefined;
+
   const {
     register,
     reset,
@@ -43,6 +49,7 @@ function SelfHosted() {
     defaultValues: {
       drawIoUrl: integrationDiagrams?.settings.url,
       gristUrl: integrationGrist?.settings.url,
+      gitlabUrl: integrationGitLabSnippet?.settings.url,
     },
   });
 
@@ -56,8 +63,9 @@ function SelfHosted() {
     reset({
       drawIoUrl: integrationDiagrams?.settings.url,
       gristUrl: integrationGrist?.settings.url,
+      gitlabUrl: integrationGitLabSnippet?.settings.url,
     });
-  }, [integrationDiagrams, integrationGrist, reset]);
+  }, [integrationDiagrams, integrationGrist, integrationGitLabSnippet, reset]);
 
   const handleSubmit = React.useCallback(
     async (data: FormData) => {
@@ -88,12 +96,29 @@ function SelfHosted() {
           await integrationGrist?.delete();
         }
 
+        if (data.gitlabUrl) {
+          await integrations.save({
+            id: integrationGitLabSnippet?.id,
+            type: IntegrationType.Embed,
+            service: IntegrationService.GitLabSnippet,
+            settings: {
+              url: data.gitlabUrl,
+            },
+          });
+        }
+
         toast.success(t("Settings saved"));
       } catch (err) {
         toast.error(err.message);
       }
     },
-    [integrations, integrationDiagrams, integrationGrist, t]
+    [
+      integrations,
+      integrationDiagrams,
+      integrationGrist,
+      integrationGitLabSnippet,
+      t,
+    ]
   );
 
   return (
@@ -126,6 +151,19 @@ function SelfHosted() {
             placeholder="https://docs.getgrist.com/"
             pattern="https?://.*"
             {...register("gristUrl")}
+          />
+        </SettingRow>
+
+        <SettingRow
+          label={t("GitLab Snippet deployment")}
+          name="gitlabUrl"
+          description={t("Add your self-hosted GitLab Snippet URL here.")}
+          border={false}
+        >
+          <Input
+            placeholder="https://gitlab.com/"
+            pattern="https?://.*"
+            {...register("gitlabUrl")}
           />
         </SettingRow>
 
