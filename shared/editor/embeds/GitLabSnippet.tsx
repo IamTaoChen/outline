@@ -3,8 +3,9 @@ import Frame, { resizeObserverScript } from "../components/Frame";
 import { EmbedProps as Props } from ".";
 
 function GitLabSnippet(props: Props) {
+  const MAX_HEIGHT = 400;
   const frame = React.useRef(null);
-  const [height, setHeight] = React.useState(400);
+  const [height, setHeight] = React.useState(MAX_HEIGHT);
   const snippetUrl = new URL(props.attrs.href);
   const id = snippetUrl.pathname.split("/").pop();
   const snippetLink = `${snippetUrl}.js`;
@@ -16,7 +17,7 @@ function GitLabSnippet(props: Props) {
   React.useEffect(() => {
     const handler = (event: MessageEvent<{ type: string; value: number }>) => {
       if (event.data.type === "frame-resized") {
-        setHeight(event.data.value);
+        setHeight(Math.min(event.data.value, MAX_HEIGHT));
       }
     };
     window.addEventListener("message", handler);
