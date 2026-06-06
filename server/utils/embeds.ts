@@ -1,6 +1,7 @@
 import type { EmbedDescriptor } from "@shared/editor/embeds";
 import { getMatchingEmbed } from "@shared/editor/lib/embeds";
 import embeds from "@shared/editor/embeds";
+import env from "@server/env";
 import fetch, { chromeUserAgent } from "./fetch";
 import { Second } from "@shared/utils/time";
 
@@ -45,12 +46,42 @@ function isBlockedByXFrameOptions(value: string | null): boolean {
 }
 
 /**
+ * Checks whether a CSP frame-ancestors source matches the given origin.
+ * Supports exact matches and wildcard subdomain patterns (e.g. https://*.example.com).
+ *
+ * @param source A single frame-ancestors source token.
+ * @param origin The origin to test against (e.g. "https://note.kyzdt.com").
+ * @returns true if the source covers the origin.
+ */
+function sourceMatchesOrigin(source: string, origin: string): boolean {
+  if (source === origin) {
+    return true;
+  }
+
+  // Wildcard subdomain: https://*.example.com
+  if (source.includes("*")) {
+    const escaped = source
+      .replace(/[.+?^${}()|[\]\\]/g, "\\$&") // escape regex special chars
+      .replace("\\*", "[^.]+"); // replace escaped * with single-label wildcard
+    return new RegExp(`^${escaped}$`).test(origin);
+  }
+
+  return false;
+}
+
+/**
  * Parses Content-Security-Policy header and checks if frame-ancestors blocks embedding.
  *
  * @param value The Content-Security-Policy header value.
+ * @param siteOrigin The origin of the current Outline installation (e.g. "https://note.kyzdt.com").
+ *                   When provided, the list of frame-ancestors sources is checked against it so that
+ *                   pages that explicitly whitelist this origin are not incorrectly blocked.
  * @returns true if embedding is blocked, false otherwise.
  */
-function isBlockedByCSP(value: string | null): boolean {
+function isBlockedByCSP(
+  value: string | null,
+  siteOrigin?: string
+): boolean {
   if (!value) {
     return false;
   }
@@ -64,28 +95,29 @@ function isBlockedByCSP(value: string | null): boolean {
       const sources = parts.slice(1);
 
       // 'none' - Cannot be embedded anywhere
-      if (sources.length === 1 && sources[0] === "'none'") {
+      if (sources.includes("'none'")) {
         return true;
       }
 
-      // 'self' only - Same origin only (blocks us)
-      if (sources.length === 1 && sources[0] === "'self'") {
-        return true;
-      }
-
-      // If there are specific origins listed (not * or 'self'), we're probably not in the list
-      // Allow if * is present anywhere in the list
+      // Wildcard * - Any origin is allowed
       if (sources.includes("*")) {
         return false;
       }
 
-      // If specific origins are listed without *, treat as blocked (we're probably not in the list)
-      if (
-        sources.length > 0 &&
-        !sources.every((s) => s === "'self'" || s === "'none'")
-      ) {
-        return true;
+      // If we know our site origin, check whether it is explicitly listed
+      if (siteOrigin) {
+        for (const source of sources) {
+          if (source === "'self'") {
+            continue; // 'self' refers to the embedded page's own origin, not ours
+          }
+          if (sourceMatchesOrigin(source, siteOrigin)) {
+            return false;
+          }
+        }
       }
+
+      // No matching source found – treat as blocked
+      return true;
     }
   }
 
@@ -130,6 +162,16 @@ export async function checkEmbeddability(
     return { embeddable: true };
   }
 
+  // Derive our installation's origin so we can check CSP frame-ancestors against it
+  let siteOrigin: string | undefined;
+  try {
+    if (env.URL) {
+      siteOrigin = new URL(env.URL).origin;
+    }
+  } catch (_e) {
+    // Invalid env.URL – proceed without origin matching
+  }
+
   // Make GET request to check headers (HEAD is unreliable for many servers)
   try {
     const controller = new AbortController();
@@ -164,7 +206,7 @@ export async function checkEmbeddability(
     }
 
     // Check Content-Security-Policy for frame-ancestors
-    if (isBlockedByCSP(csp)) {
+    if (isBlockedByCSP(csp, siteOrigin)) {
       return { embeddable: false, reason: "csp-frame-ancestors" };
     }
 
