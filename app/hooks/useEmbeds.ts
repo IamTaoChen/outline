@@ -1,10 +1,15 @@
 import { find } from "es-toolkit/compat";
 import { useEffect, useMemo } from "react";
 import { toError } from "@shared/utils/error";
-import embeds from "@shared/editor/embeds";
-import { IntegrationType, TeamPreference } from "@shared/types";
+import embeds, { createGitLabSnippetRegex } from "@shared/editor/embeds";
+import {
+  IntegrationService,
+  IntegrationType,
+  TeamPreference,
+} from "@shared/types";
 import type Integration from "~/models/Integration";
 import Logger from "~/utils/Logger";
+import { useComputed } from "./useComputed";
 import useCurrentTeam from "./useCurrentTeam";
 import useStores from "./useStores";
 
@@ -36,6 +41,27 @@ export default function useEmbeds(loadIfMissing = false) {
 
   const disabledEmbeds =
     (team?.getPreference(TeamPreference.DisabledEmbeds) as string[]) || [];
+  const gitLabSnippetRegexMatches = useComputed(() => {
+    const origins = new Set(["https://gitlab.com"]);
+
+    integrations
+      .filterByService(IntegrationService.GitLab)
+      .forEach((integration) => {
+        const gitlabUrl = integration.settings?.gitlab?.url;
+
+        if (!gitlabUrl) {
+          return;
+        }
+
+        try {
+          origins.add(new URL(gitlabUrl).origin);
+        } catch (_err) {
+          // Ignore invalid stored GitLab URL.
+        }
+      });
+
+    return Array.from(origins).map(createGitLabSnippetRegex);
+  }, [integrations]);
 
   return useMemo(
     () =>
@@ -48,11 +74,15 @@ export default function useEmbeds(loadIfMissing = false) {
           e.settings = integration.settings;
         }
 
+        if (e.id === "gitlab-snippet") {
+          e.regexMatch = gitLabSnippetRegexMatches;
+        }
+
         e.disabled = disabledEmbeds.includes(e.id);
 
         return e;
       }),
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-    [integrations.orderedData, team?.preferences]
+    [gitLabSnippetRegexMatches, integrations.orderedData, team?.preferences]
   );
 }
