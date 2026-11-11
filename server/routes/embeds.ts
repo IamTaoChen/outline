@@ -1,8 +1,48 @@
 import escape from "escape-html";
 import type { Context, Next } from "koa";
+import { IntegrationService, IntegrationType } from "@shared/types";
 import env from "@server/env";
 import { InvalidRequestError } from "@server/errors";
 import { allowScriptSrc, allowStyleSrc } from "@server/middlewares/csp";
+import { Integration } from "@server/models";
+import { getTeamFromContext } from "@server/utils/passport";
+
+async function getGitLabHosts(ctx: Context): Promise<Set<string>> {
+  const hosts = new Set<string>();
+  const team = await getTeamFromContext(ctx, { includeOAuthState: false });
+
+  if (!team) {
+    return hosts;
+  }
+
+  const integrations: Integration<IntegrationType.Embed>[] =
+    await Integration.findAll({
+      where: {
+        service: IntegrationService.GitLab,
+        type: IntegrationType.Embed,
+        teamId: team.id,
+      },
+    });
+
+  integrations.forEach((integration) => {
+    const gitlabUrl = integration.settings?.gitlab?.url;
+
+    if (!gitlabUrl) {
+      return;
+    }
+
+    try {
+      const url = new URL(gitlabUrl);
+      if (url.protocol === "https:") {
+        hosts.add(url.host);
+      }
+    } catch (_err) {
+      // Ignore invalid stored GitLab URL.
+    }
+  });
+
+  return hosts;
+}
 
 /**
  * Resize observer script that sends a message to the parent window when content is resized. Inject
@@ -46,22 +86,24 @@ export const renderEmbed = async (ctx: Context, next: Next) => {
     ctx.throw(InvalidRequestError("url is required"));
   }
 
-  let parsed;
+  let parsed: URL;
   try {
     parsed = new URL(url);
   } catch (_err) {
     ctx.throw(InvalidRequestError("Invalid URL provided"));
+    return;
   }
 
   if (
-    parsed.host === "gitlab.com" &&
+    ctx.path === "/embeds/gitlab" &&
     parsed.protocol === "https:" &&
-    ctx.path === "/embeds/gitlab"
+    (parsed.host === "gitlab.com" ||
+      (await getGitLabHosts(ctx)).has(parsed.host))
   ) {
     const snippetLink = `${url}.js`;
 
-    allowScriptSrc(ctx, ["gitlab.com"]);
-    allowStyleSrc(ctx, ["gitlab.com"]);
+    allowScriptSrc(ctx, [parsed.host]);
+    allowStyleSrc(ctx, [parsed.host]);
     ctx.set("X-Frame-Options", "sameorigin");
 
     ctx.type = "html";
