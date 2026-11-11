@@ -22,6 +22,17 @@ import Vimeo from "./Vimeo";
 import YouTube from "./YouTube";
 import PlantUmlDiagrams from "./PlantUml";
 
+/**
+ * Creates a snippet URL pattern for a GitLab instance.
+ *
+ * @param origin the normalized HTTPS origin of the GitLab instance.
+ * @returns a regular expression matching snippet URLs for the instance.
+ */
+export function createGitLabSnippetRegex(origin: string): RegExp {
+  const escapedOrigin = origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^${escapedOrigin}/(([a-zA-Z\\d-]+)/)*-/snippets/\\d+$`);
+}
+
 export type EmbedProps = {
   isSelected: boolean;
   isEditable: boolean;
@@ -317,11 +328,10 @@ const embeds: EmbedDescriptor[] = [
   }),
   new EmbedDescriptor({
     id: "gitlab-snippet",
+    name: IntegrationService.GitLab,
     title: "GitLab Snippet",
     keywords: "code",
-    regexMatch: [
-      new RegExp(`^https://gitlab\\.com/(([a-zA-Z\\d-]+)/)*-/snippets/\\d+$`),
-    ],
+    regexMatch: [createGitLabSnippetRegex("https://gitlab.com")],
     icon: <Img src="/images/gitlab.png" alt="GitLab" />,
     component: GitLabSnippet,
   }),

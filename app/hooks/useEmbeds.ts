@@ -1,11 +1,19 @@
 import { find } from "es-toolkit/compat";
 import { useEffect, useMemo } from "react";
 import { toError } from "@shared/utils/error";
-import embeds from "@shared/editor/embeds";
-import { IntegrationType, TeamPreference } from "@shared/types";
+import embeds, {
+  createGitLabSnippetRegex,
+  EmbedDescriptor,
+} from "@shared/editor/embeds";
+import {
+  IntegrationService,
+  IntegrationType,
+  TeamPreference,
+} from "@shared/types";
 import type Integration from "~/models/Integration";
 import Logger from "~/utils/Logger";
 import { Hook, PluginManager } from "~/utils/PluginManager";
+import { useComputed } from "./useComputed";
 import useCurrentTeam from "./useCurrentTeam";
 import useStores from "./useStores";
 
@@ -39,10 +47,36 @@ export default function useEmbeds(loadIfMissing = false) {
   const pluginsLoaded = PluginManager.isLoaded;
   const disabledEmbeds =
     (team?.getPreference(TeamPreference.DisabledEmbeds) as string[]) || [];
+  const gitLabSnippetRegexMatches = useComputed(() => {
+    const origins = new Set(["https://gitlab.com"]);
+
+    integrations
+      .filterByService(IntegrationService.GitLab)
+      .forEach((integration) => {
+        const gitlabUrl = integration.settings?.gitlab?.url;
+
+        if (!gitlabUrl) {
+          return;
+        }
+
+        try {
+          const url = new URL(gitlabUrl);
+          if (url.protocol === "https:") {
+            origins.add(url.origin);
+          }
+        } catch (_err) {
+          // Ignore invalid stored GitLab URL.
+        }
+      });
+
+    return Array.from(origins).map(createGitLabSnippetRegex);
+  }, [integrations]);
 
   return useMemo(
     () =>
-      embeds.map((e) => {
+      embeds.map((descriptor) => {
+        const e = new EmbedDescriptor(descriptor);
+
         // Find any integrations that match this embed and inject the settings
         const integration: Integration<IntegrationType.Embed> | undefined =
           find(integrations.orderedData, (i) => i.service === e.name);
@@ -54,11 +88,20 @@ export default function useEmbeds(loadIfMissing = false) {
             ?.value.url(integration.settings);
         }
 
+        if (e.id === "gitlab-snippet") {
+          e.regexMatch = gitLabSnippetRegexMatches;
+        }
+
         e.disabled = disabledEmbeds.includes(e.id);
 
         return e;
       }),
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-    [integrations.orderedData, team?.preferences, pluginsLoaded]
+    [
+      gitLabSnippetRegexMatches,
+      integrations.orderedData,
+      team?.preferences,
+      pluginsLoaded,
+    ]
   );
 }
