@@ -174,6 +174,60 @@ describe("checkEmbeddability", () => {
       });
     });
 
+    it("should return embeddable: true when CSP frame-ancestors explicitly lists the site origin", async () => {
+      // env.URL is set to "https://app.outline.dev" in the test setup
+      mockEmbedResponse(embedUrl, {
+        headers: {
+          "Content-Security-Policy":
+            "frame-ancestors 'self' https://app.outline.dev",
+        },
+      });
+
+      const result = await checkEmbeddability(embedUrl);
+      expect(result).toEqual({ embeddable: true });
+    });
+
+    it("should return embeddable: true when CSP frame-ancestors has a wildcard that covers the site origin", async () => {
+      // https://*.outline.dev covers https://app.outline.dev
+      mockEmbedResponse(embedUrl, {
+        headers: {
+          "Content-Security-Policy":
+            "frame-ancestors 'self' https://*.outline.dev",
+        },
+      });
+
+      const result = await checkEmbeddability(embedUrl);
+      expect(result).toEqual({ embeddable: true });
+    });
+
+    it.each([
+      ["https://*.dev", true],
+      ["https://*.app.outline.dev", false],
+      ["https://*.other.dev", false],
+      ["https://app.outline.dev.evil.test", false],
+      ["https://APP.OUTLINE.DEV:443", true],
+      ["https://app.outline.dev:8443", false],
+      ["https://*.outline.dev:*", true],
+      ["http://app.outline.dev", true],
+      ["http://app.outline.dev:443", true],
+      ["http://*.outline.dev", true],
+      ["https://*outline.dev", false],
+      ["https://*.outline.dev:65536", false],
+      ["https://*.outline.dev:8443", false],
+      ["https://*.outline.dev, frame-ancestors 'none'", false],
+    ])("checks frame-ancestors source %s", async (source, embeddable) => {
+      mockEmbedResponse(embedUrl, {
+        headers: { "Content-Security-Policy": `frame-ancestors ${source}` },
+      });
+
+      const result = await checkEmbeddability(embedUrl);
+      expect(result).toEqual(
+        embeddable
+          ? { embeddable: true }
+          : { embeddable: false, reason: "csp-frame-ancestors" }
+      );
+    });
+
     it("should return embeddable: false when COEP is require-corp", async () => {
       mockEmbedResponse(embedUrl, {
         headers: { "Cross-Origin-Embedder-Policy": "require-corp" },

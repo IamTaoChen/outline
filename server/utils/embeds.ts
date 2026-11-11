@@ -1,6 +1,7 @@
 import type { EmbedDescriptor } from "@shared/editor/embeds";
 import { getMatchingEmbed } from "@shared/editor/lib/embeds";
 import embeds from "@shared/editor/embeds";
+import env from "@server/env";
 import fetch, { chromeUserAgent } from "./fetch";
 import { Second } from "@shared/utils/time";
 
@@ -48,12 +49,70 @@ function isBlockedByXFrameOptions(value: string | null): boolean {
 }
 
 /**
+ * Checks whether a CSP frame-ancestors source matches the given origin.
+ * Supports exact matches and wildcard subdomain patterns (e.g. https://*.example.com).
+ *
+ * @param source a single frame-ancestors source token.
+ * @param origin the installation URL to test against.
+ * @returns true if the source covers the origin.
+ */
+function sourceMatchesOrigin(source: string, origin: URL): boolean {
+  const parts =
+    /^(https?):\/\/(\*\.)?(\[[\da-f:]+\]|[\da-z.-]+)(?::(\*|\d+))?\/?$/i.exec(
+      source
+    );
+  if (!parts) {
+    return false;
+  }
+
+  const [, scheme, wildcard, hostname, port] = parts;
+  if (!scheme || !hostname) {
+    return false;
+  }
+
+  let sourceUrl: URL;
+  try {
+    sourceUrl = new URL(
+      `${scheme}://${hostname}${port && port !== "*" ? `:${port}` : ""}`
+    );
+  } catch {
+    return false;
+  }
+
+  const upgradesToHttps =
+    sourceUrl.protocol === "http:" && origin.protocol === "https:";
+  if (sourceUrl.protocol !== origin.protocol && !upgradesToHttps) {
+    return false;
+  }
+
+  const hostMatches = wildcard
+    ? origin.hostname.endsWith(`.${sourceUrl.hostname}`)
+    : origin.hostname === sourceUrl.hostname;
+  if (!hostMatches) {
+    return false;
+  }
+
+  const sourcePort =
+    sourceUrl.port || (sourceUrl.protocol === "https:" ? "443" : "80");
+  const originPort =
+    origin.port || (origin.protocol === "https:" ? "443" : "80");
+  return (
+    port === "*" ||
+    sourcePort === originPort ||
+    (upgradesToHttps && sourcePort === "80" && originPort === "443")
+  );
+}
+
+/**
  * Parses Content-Security-Policy header and checks if frame-ancestors blocks embedding.
  *
  * @param value The Content-Security-Policy header value.
+ * @param siteOrigin the URL of the current Outline installation.
+ *                   When provided, the list of frame-ancestors sources is checked against it so that
+ *                   pages that explicitly whitelist this origin are not incorrectly blocked.
  * @returns true if embedding is blocked, false otherwise.
  */
-function isBlockedByCSP(value: string | null): boolean {
+function isBlockedByCSP(value: string | null, siteOrigin?: URL): boolean {
   if (!value) {
     return false;
   }
@@ -84,6 +143,14 @@ function isBlockedByCSP(value: string | null): boolean {
     // If there are specific origins listed (not * or 'self'), we're probably not in the list
     // Allow if * is present anywhere in the list
     if (sources.includes("*")) {
+      return false;
+    }
+
+    // Allow sources that explicitly include this installation's origin.
+    if (
+      siteOrigin &&
+      sources.some((source) => sourceMatchesOrigin(source, siteOrigin))
+    ) {
       return false;
     }
 
@@ -133,6 +200,16 @@ export async function checkEmbeddability(
     return { embeddable: true };
   }
 
+  // Derive our installation's origin so we can check CSP frame-ancestors against it
+  let siteOrigin: URL | undefined;
+  try {
+    if (env.URL) {
+      siteOrigin = new URL(env.URL);
+    }
+  } catch (_e) {
+    // Invalid env.URL – proceed without origin matching
+  }
+
   // Make GET request to check headers (HEAD is unreliable for many servers)
   try {
     const controller = new AbortController();
@@ -167,7 +244,7 @@ export async function checkEmbeddability(
     }
 
     // Check Content-Security-Policy for frame-ancestors
-    if (isBlockedByCSP(csp)) {
+    if (isBlockedByCSP(csp, siteOrigin)) {
       return { embeddable: false, reason: "csp-frame-ancestors" };
     }
 
